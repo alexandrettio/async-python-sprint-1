@@ -156,4 +156,4 @@ class CityWeatherData(BaseModel):
     city: str  # TODO Enum
     date: datetime.date
     average_temperature: float
-    is_with_conditions: int
+    without_conditions_hours: int
