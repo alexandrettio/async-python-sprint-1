@@ -63,29 +63,36 @@ class DataCalculationTask:
 
 
 class DataAggregationTask:
+    """Группирует данные и создает таблицу с агрегированными данными."""
+
     def __init__(self, data: List[CityWeatherData], file_format: FileFormat):
         self.data = data
         self.format = file_format
+        self.avg_tmp_str = "Температура, среднее"
+        self.no_conditions_str = "Без осадков, часов"
+
+    @staticmethod
+    def init_grouped_data_dict():
+        return {
+            "sum": 0,
+            "count": 0
+        }
 
     def group_by_city(self) -> Dict[Tuple[str, str], Dict[str, float]]:
         grouped_data = dict()
 
         for item in self.data:
-            if (item.city, "Температура, среднее") not in grouped_data:
-                grouped_data[(item.city, "Температура, среднее")] = dict()
-                grouped_data[(item.city, "Температура, среднее")]["sum"] = 0
-                grouped_data[(item.city, "Температура, среднее")]["count"] = 0
-                grouped_data[(item.city, "Без осадков, часов")] = dict()
-                grouped_data[(item.city, "Без осадков, часов")]["sum"] = 0
-                grouped_data[(item.city, "Без осадков, часов")]["count"] = 0
+            if (item.city, self.avg_tmp_str) not in grouped_data:
+                grouped_data[(item.city, self.avg_tmp_str)] = self.init_grouped_data_dict()
+                grouped_data[(item.city, self.no_conditions_str)] = self.init_grouped_data_dict()
 
-            grouped_data[(item.city, "Температура, среднее")][item.date] = item.average_temperature
-            grouped_data[(item.city, "Температура, среднее")]["sum"] += item.average_temperature
-            grouped_data[(item.city, "Температура, среднее")]["count"] += 1
+            grouped_data[(item.city, self.avg_tmp_str)][item.date] = item.average_temperature
+            grouped_data[(item.city, self.avg_tmp_str)]["sum"] += item.average_temperature
+            grouped_data[(item.city, self.avg_tmp_str)]["count"] += 1
 
-            grouped_data[(item.city, "Без осадков, часов")][item.date] = item.without_conditions_hours
-            grouped_data[(item.city, "Без осадков, часов")]["sum"] += item.without_conditions_hours
-            grouped_data[(item.city, "Без осадков, часов")]["count"] += 1
+            grouped_data[(item.city, self.no_conditions_str)][item.date] = item.without_conditions_hours
+            grouped_data[(item.city, self.no_conditions_str)]["sum"] += item.without_conditions_hours
+            grouped_data[(item.city, self.no_conditions_str)]["count"] += 1
 
         return grouped_data
 
