@@ -8,7 +8,8 @@ from api_client import YandexWeatherAPI
 from model import YWResponse, CityWeatherData
 
 logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(filename)s - %(funcName)s - %(message)s'
+    filename="sprint1.log",
+    format="%(asctime)s - %(levelname)s - %(filename)s - %(funcName)s - %(message)s"
 )
 
 FileFormat = Literal["json", "csv", "xls"]
@@ -27,10 +28,10 @@ class DataFetchingTask:
             raw_response = self.yw_api.get_forecasting(self.city_name)
             return YWResponse.parse_obj(raw_response)
         except ValidationError as e:
-            logging.exception(f"Error during parsing response: {e.message}")
+            logging.exception(f"Error during parsing response: {e}")
             raise e
         except Exception as e:  # Bad API: why raises common exception not customized?
-            logging.exception(f"processed city: {self.city}. Got: {e.message}")
+            logging.exception(f"processed city: {self.city_name}. Got: {e}")
             raise e
 
 
@@ -50,15 +51,16 @@ class DataCalculationTask:
         result = []
         base_conditions = ("rain", "snow", "hail", "thunderstorm")
         for date_info in self.response.forecasts:
-            temps = [h.temp for h in date_info.hours if 9 >= h.hour >= 19]
-            data = CityWeatherData(
-                city=self.response.geo_object.province.name,
-                date=date_info.date,
-                average_temperature=sum(temps) / len(temps),
-                without_conditions_hours=len([h.condition for h in date_info.hours
-                                              if 9 >= h.hour >= 19 and h.condition not in base_conditions])
-            )
-            result.append(data)
+            temps = [h.temp for h in date_info.hours if 9 <= h.hour <= 19]
+            if temps:
+                data = CityWeatherData(
+                    city=self.response.geo_object.province.name,
+                    date=date_info.date,
+                    average_temperature=sum(temps) / len(temps),
+                    without_conditions_hours=len([h.condition for h in date_info.hours
+                                                  if 9 <= h.hour <= 19 and h.condition not in base_conditions])
+                )
+                result.append(data)
         return result
 
 
@@ -86,11 +88,12 @@ class DataAggregationTask:
                 grouped_data[(item.city, self.avg_tmp_str)] = self.init_grouped_data_dict()
                 grouped_data[(item.city, self.no_conditions_str)] = self.init_grouped_data_dict()
 
-            grouped_data[(item.city, self.avg_tmp_str)][item.date] = item.average_temperature
+            date = item.date.strftime("%d-%m")
+            grouped_data[(item.city, self.avg_tmp_str)][date] = int(item.average_temperature)
             grouped_data[(item.city, self.avg_tmp_str)]["sum"] += item.average_temperature
             grouped_data[(item.city, self.avg_tmp_str)]["count"] += 1
 
-            grouped_data[(item.city, self.no_conditions_str)][item.date] = item.without_conditions_hours
+            grouped_data[(item.city, self.no_conditions_str)][date] = int(item.without_conditions_hours)
             grouped_data[(item.city, self.no_conditions_str)]["sum"] += item.without_conditions_hours
             grouped_data[(item.city, self.no_conditions_str)]["count"] += 1
 
@@ -101,8 +104,10 @@ class DataAggregationTask:
         output_data = list()
         fieldnames = tuple()
         for item, value_dict in data.items():
-            value_dict["Среднее"] = value_dict.pop("sum") / value_dict.pop("count")
-            fieldnames = ("Город / день", "", *value_dict.keys())
+            value_dict["Среднее"] = round(value_dict.pop("sum") / value_dict.pop("count"), 1)
+            fieldnames_tmp = ("Город / день", "", *value_dict.keys())
+            if len(fieldnames_tmp) > len(fieldnames):
+                fieldnames = fieldnames_tmp
             output_data.append(
                 {
                     "Город / день": item[0],

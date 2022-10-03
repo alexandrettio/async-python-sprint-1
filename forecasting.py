@@ -8,7 +8,6 @@ from tasks import (
     DataFetchingTask,
     DataCalculationTask,
     DataAggregationTask,
-    DataAnalyzingTask,
 )
 from utils import CITIES
 
@@ -17,10 +16,13 @@ def forecast_weather():
     """
     Анализ погодных условий по городам
     """
-    # city_name = "MOSCOW"
-    # ywAPI = YandexWeatherAPI()
-    # resp = ywAPI.get_forecasting(city_name)
-    pass
+    yw_data = list()
+    for city in CITIES:
+        fetcher = DataFetchingTask(city_name=city, yw_api=YandexWeatherAPI())
+        calculator = DataCalculationTask(fetcher.run())
+        yw_data.extend(calculator.run())
+    aggregator = DataAggregationTask(yw_data, "csv")
+    aggregator.run()
 
 
 if __name__ == "__main__":
