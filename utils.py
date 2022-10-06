@@ -24,6 +24,7 @@ BASE_CONDITIONS = ("rain", "snow", "hail", "thunderstorm")
 
 AVG_TMP_STR = "Температура, среднее"
 NO_CONDITIONS_STR = "Без осадков, часов"
+AVG_STR = "Среднее"
 
 
 def check_python_version():

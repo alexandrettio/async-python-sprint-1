@@ -1,12 +1,13 @@
 import csv
 import logging
-from typing import List, Literal, Tuple, Dict
+from collections import defaultdict
+from typing import List, Literal, Dict
 
 from pydantic import ValidationError
 
 from api_client import YandexWeatherAPI
 from model import YWResponse, CityWeatherData
-from utils import BASE_CONDITIONS, AVG_TMP_STR, NO_CONDITIONS_STR
+from utils import BASE_CONDITIONS, AVG_TMP_STR, NO_CONDITIONS_STR, AVG_STR
 
 logging.basicConfig(
     filename="sprint1.log",
@@ -84,55 +85,68 @@ class DataAggregationTask:
         self.data = data
         self.format = file_format
 
-    @staticmethod
-    def init_grouped_data_dict():
-        return {
-            "sum": 0,
-            "count": 0
-        }
-
-    def group_by_city(self) -> Dict[Tuple[str, str], Dict[str, float]]:
+    def group_by_city(self) -> Dict[str, Dict[str, Dict[str, float]]]:
         grouped_data = dict()
 
         for item in self.data:
-            if (item.city, AVG_TMP_STR) not in grouped_data:
-                grouped_data[(item.city, AVG_TMP_STR)] = self.init_grouped_data_dict()
-                grouped_data[(item.city, NO_CONDITIONS_STR)] = self.init_grouped_data_dict()
+            if item.city not in grouped_data:
+                grouped_data[item.city] = defaultdict(dict)
+                grouped_data[item.city]["sum"][AVG_TMP_STR] = 0
+                grouped_data[item.city]["sum"][NO_CONDITIONS_STR] = 0
+                grouped_data[item.city]["count"] = 0
 
             date = item.date
-            grouped_data[(item.city, AVG_TMP_STR)][date] = int(item.average_temperature)
-            grouped_data[(item.city, AVG_TMP_STR)]["sum"] += item.average_temperature
-            grouped_data[(item.city, AVG_TMP_STR)]["count"] += 1
+            grouped_data[item.city][date][AVG_TMP_STR] = int(item.average_temperature)
+            grouped_data[item.city][date][NO_CONDITIONS_STR] = int(item.without_conditions_hours)
 
-            grouped_data[(item.city, NO_CONDITIONS_STR)][date] = int(item.without_conditions_hours)
-            grouped_data[(item.city, NO_CONDITIONS_STR)]["sum"] += item.without_conditions_hours
-            grouped_data[(item.city, NO_CONDITIONS_STR)]["count"] += 1
-
+            grouped_data[item.city]["sum"][AVG_TMP_STR] += item.average_temperature
+            grouped_data[item.city]["sum"][NO_CONDITIONS_STR] += item.without_conditions_hours
+            grouped_data[item.city]["count"] += 1
         return grouped_data
 
-    def group_for_output(self) -> List[Dict]:
-        data = self.group_by_city()
-        output_data = list()
-        for item, value_dict in data.items():
-            value_dict["Среднее"] = round(value_dict.pop("sum") / value_dict.pop("count"), 1)
-            if item[1] == AVG_TMP_STR:
-                conditions_info = data[(item[0], NO_CONDITIONS_STR)]
-                conditions_points = conditions_info["sum"] / conditions_info["count"]
-                value_dict["points"] = int(value_dict["Среднее"] * 100 + conditions_points)
-            else:
-                temperature_info = data[(item[0], AVG_TMP_STR)]
-                value_dict["points"] = int(temperature_info["Среднее"] * 100 + value_dict["Среднее"])
-            output_data.append(
-                {
-                    "Город / день": item[0] if item[1] == AVG_TMP_STR else "",
-                    "": item[1],
-                    **value_dict
-                }
-            )
-        return output_data
+    @staticmethod
+    def count_average_and_rating(data):
+        rating = defaultdict(list)
+        for city, info in data.items():
+            data[city][AVG_STR][AVG_TMP_STR] = data[city]["sum"][AVG_TMP_STR] / data[city]["count"]
+            data[city][AVG_STR][NO_CONDITIONS_STR] = data[city]["sum"][NO_CONDITIONS_STR] / data[city]["count"]
+            average_info = data[city][AVG_STR]
+            data[city].pop("sum")
+            data[city].pop("count")
+            points = int(average_info[AVG_TMP_STR] * 100 + average_info[NO_CONDITIONS_STR])
+            rating[points].append(city)
+        return data, rating
+
+    @staticmethod
+    def group_table_ordered_by_points(data, rating):
+        result = list()
+        index = 1
+        for points in sorted(rating, reverse=True):
+            for city_name in rating[points]:
+                avgs = dict()
+                conditions = dict()
+                for k, v in data[city_name].items():
+                    avgs[k] = round(v[AVG_TMP_STR], 1)
+                    conditions[k] = round(v[NO_CONDITIONS_STR], 1)
+
+                result.append({
+                    "Город/день": city_name,
+                    "": AVG_TMP_STR,
+                    **avgs,
+                    "Рейтинг": index,
+                })
+                result.append({
+                    "Город/день": "",
+                    "": NO_CONDITIONS_STR,
+                    **conditions,
+                    "Рейтинг": None,
+                })
+            index += 1
+        return result
 
     def run(self):
-        return self.group_for_output()
+        data, rating = self.count_average_and_rating(self.group_by_city())
+        return self.group_table_ordered_by_points(data, rating)
 
 
 class DataAnalyzingTask:
