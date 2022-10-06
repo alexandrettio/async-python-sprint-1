@@ -80,10 +80,9 @@ class DataCalculationTask:
 class DataAggregationTask:
     """Группирует данные и создает таблицу с агрегированными данными."""
 
-    def __init__(self, data: List[CityWeatherData], file_format: FileFormat):
+    def __init__(self, data: List[CityWeatherData]):
         self.task_name = "DataAggregationTask"
         self.data = data
-        self.format = file_format
 
     def group_by_city(self) -> Dict[str, Dict[str, Dict[str, float]]]:
         grouped_data = dict()
@@ -117,15 +116,32 @@ class DataAggregationTask:
             rating[points].append(city)
         return data, rating
 
-    @staticmethod
-    def group_table_ordered_by_points(data, rating):
+    def run(self):
+        return self.count_average_and_rating(self.group_by_city())
+
+
+class DataAnalyzingTask:
+    """
+    Составляет рейтинг привлекательности городов и создает файл
+
+    - Наиболее благоприятным городом считать тот, в котором средняя температура за всё время была самой высокой,
+    а количество времени без осадков — максимальным. Если таких городов более одного, то выводить все.
+    """
+
+    def __init__(self, data: List[Dict], rating: Dict[int, str], file_format: FileFormat):
+        self.task_name = "DataAnalyzingTask"
+        self.data = data
+        self.rating = rating
+        self.format = file_format
+
+    def group_table_ordered_by_points(self):
         result = list()
         index = 1
-        for points in sorted(rating, reverse=True):
-            for city_name in rating[points]:
+        for points in sorted(self.rating, reverse=True):
+            for city_name in self.rating[points]:
                 avgs = dict()
                 conditions = dict()
-                for k, v in data[city_name].items():
+                for k, v in self.data[city_name].items():
                     avgs[k] = round(v[AVG_TMP_STR], 1)
                     conditions[k] = round(v[NO_CONDITIONS_STR], 1)
 
@@ -145,28 +161,10 @@ class DataAggregationTask:
         return result
 
     def run(self):
-        data, rating = self.count_average_and_rating(self.group_by_city())
-        return self.group_table_ordered_by_points(data, rating)
-
-
-class DataAnalyzingTask:
-    """
-    Составляет рейтинг привлекательности городов и создает файл
-
-    - Наиболее благоприятным городом считать тот, в котором средняя температура за всё время была самой высокой,
-    а количество времени без осадков — максимальным. Если таких городов более одного, то выводить все.
-    """
-
-    def __init__(self, data: List[Dict], file_format: FileFormat):
-        self.task_name = "DataAnalyzingTask"
-        self.data = data
-        self.format = file_format
-
-    def run(self):
         logging.info(f"{self.task_name} started. File format is {self.format}.")
         if self.format == "csv":
             with open("report.csv", "w") as f:
-                data = self.get_scores()
+                data = self.group_table_ordered_by_points()
                 fieldnames = data[0].keys()
                 writer = csv.DictWriter(f, fieldnames)
                 writer.writeheader()

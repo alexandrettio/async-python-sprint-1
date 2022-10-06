@@ -21,8 +21,8 @@ def forecast_weather():
         fetcher = DataFetchingTask(city_name=city, yw_api=YandexWeatherAPI())
         calculator = DataCalculationTask(fetcher.run())
         yw_data.extend(calculator.run())
-    aggregator = DataAggregationTask(yw_data, "csv")
-    analyzer = DataAnalyzingTask(aggregator.run(), "csv")
+    aggregator = DataAggregationTask(yw_data)
+    analyzer = DataAnalyzingTask(*aggregator.run(), "csv")
     analyzer.run()
 
 
