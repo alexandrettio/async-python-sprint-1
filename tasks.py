@@ -1,9 +1,11 @@
 import csv
+import json
 import logging
 from collections import defaultdict
 from typing import List, Literal, Dict
 
 from pydantic import ValidationError
+from xlsxwriter import Workbook
 
 from api_client import YandexWeatherAPI
 from model import YWResponse, CityWeatherData
@@ -145,6 +147,7 @@ class DataAnalyzingTask:
                     avgs[k] = round(v[AVG_TMP_STR], 1)
                     conditions[k] = round(v[NO_CONDITIONS_STR], 1)
 
+                # 2 lines for one city as in example.
                 result.append({
                     "Город/день": city_name,
                     "": AVG_TMP_STR,
@@ -160,13 +163,42 @@ class DataAnalyzingTask:
             index += 1
         return result
 
+    @staticmethod
+    def write_csv(data, fieldnames):
+        logging.info(f"write_csv started.")
+        with open("report.csv", "w") as f:
+            writer = csv.DictWriter(f, fieldnames)
+            writer.writeheader()
+            writer.writerows(data)
+        logging.info(f"write_csv finished.")
+
+    @staticmethod
+    def write_json(data):
+        logging.info(f"write_json started.")
+        with open("report.json", "w") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        logging.info(f"write_json finished.")
+
+    @staticmethod
+    def write_xls(data, fieldnames):
+        logging.info(f"write_xls started.")
+        with Workbook("report.xlsx") as workbook:
+            worksheet = workbook.add_worksheet()
+            worksheet.write_row(row=0, col=0, data=fieldnames)
+            for index, item in enumerate(data):
+                row = map(lambda field_id: item.get(field_id, ''), fieldnames)
+                worksheet.write_row(row=index + 1, col=0, data=row)
+        logging.info(f"write_xls finished.")
+
     def run(self):
         logging.info(f"{self.task_name} started. File format is {self.format}.")
+        data = self.group_table_ordered_by_points()
+        fieldnames = data[0].keys()
         if self.format == "csv":
-            with open("report.csv", "w") as f:
-                data = self.group_table_ordered_by_points()
-                fieldnames = data[0].keys()
-                writer = csv.DictWriter(f, fieldnames)
-                writer.writeheader()
-                writer.writerows(data)
+            self.write_csv(data, fieldnames)
+        elif self.format == "json":
+            self.write_json(data)
+        elif self.format == "xls":
+            self.write_xls(data, fieldnames)
+
         logging.info(f"{self.task_name} finished.")
