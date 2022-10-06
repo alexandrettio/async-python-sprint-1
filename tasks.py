@@ -136,7 +136,7 @@ class DataAggregationTask:
                     "Рейтинг": index,
                 })
                 result.append({
-                    "Город/день": "",
+                    "Город/день": None,
                     "": NO_CONDITIONS_STR,
                     **conditions,
                     "Рейтинг": None,
