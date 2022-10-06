@@ -115,7 +115,13 @@ class DataAggregationTask:
         output_data = list()
         for item, value_dict in data.items():
             value_dict["Среднее"] = round(value_dict.pop("sum") / value_dict.pop("count"), 1)
-            fieldnames = ("Город / день", "", *value_dict.keys())
+            if item[1] == AVG_TMP_STR:
+                conditions_info = data[(item[0], NO_CONDITIONS_STR)]
+                conditions_points = conditions_info["sum"] / conditions_info["count"]
+                value_dict["points"] = int(value_dict["Среднее"] * 100 + conditions_points)
+            else:
+                temperature_info = data[(item[0], AVG_TMP_STR)]
+                value_dict["points"] = int(temperature_info["Среднее"] * 100 + value_dict["Среднее"])
             output_data.append(
                 {
                     "Город / день": item[0] if item[1] == AVG_TMP_STR else "",
