@@ -162,13 +162,6 @@ class DataAnalyzingTask:
         self.data = data
         self.format = file_format
 
-    def get_scores(self):
-        pass
-        return self.data
-
-    def sort_by_scores(self):
-        pass
-
     def run(self):
         logging.info(f"{self.task_name} started. File format is {self.format}.")
         if self.format == "csv":
