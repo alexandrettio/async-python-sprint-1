@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from api_client import YandexWeatherAPI
 from model import YWResponse, CityWeatherData
+from utils import BASE_CONDITIONS, AVG_TMP_STR, NO_CONDITIONS_STR
 
 logging.basicConfig(
     filename="sprint1.log",
@@ -17,7 +18,7 @@ FileFormat = Literal["json", "csv", "xls"]
 
 
 class DataFetchingTask:
-    """Выкачивание данных от Яндекс.Погоды по названию города."""
+    """Выкачивание данных от Яндекс.Погоды по названию города и преобразует в объект YWResponse."""
 
     def __init__(self, city_name: str, yw_api: YandexWeatherAPI):
         self.task_name = "DataFetchingTask"
@@ -30,7 +31,7 @@ class DataFetchingTask:
         try:
             raw_response = self.yw_api.get_forecasting(self.city_name)
             parsed = YWResponse.parse_obj(raw_response)
-            logging.info(f"{self.task_name} finished whithout errors for city {self.city_name}.")
+            logging.info(f"{self.task_name} finished without errors for city {self.city_name}.")
             return parsed
         except ValidationError as e:
             logging.exception(f"{self.task_name} finished with error for city "
@@ -58,12 +59,11 @@ class DataCalculationTask:
         logging.info(f"{self.task_name} started for city {self.response.geo_object.province.name}.")
 
         result = []
-        base_conditions = ("rain", "snow", "hail", "thunderstorm")
         for date_info in self.response.forecasts:
             temps = [h.temp for h in date_info.hours if 9 <= h.hour <= 19]
             without_conditions = [h.condition for h in date_info.hours
-                                  if 9 <= h.hour <= 19 and h.condition not in base_conditions]
-            if temps:
+                                  if 9 <= h.hour <= 19 and h.condition not in BASE_CONDITIONS]
+            if len(temps) == 11:  # if API returns not full day, period average stats will be ruined
                 data = CityWeatherData(
                     city=self.response.geo_object.province.name,
                     date=date_info.date,
@@ -81,9 +81,6 @@ class DataAggregationTask:
 
     def __init__(self, data: List[CityWeatherData], file_format: FileFormat):
         self.task_name = "DataAggregationTask"
-        self.avg_tmp_str = "Температура, среднее"
-        self.no_conditions_str = "Без осадков, часов"
-
         self.data = data
         self.format = file_format
 
@@ -98,60 +95,67 @@ class DataAggregationTask:
         grouped_data = dict()
 
         for item in self.data:
-            if (item.city, self.avg_tmp_str) not in grouped_data:
-                grouped_data[(item.city, self.avg_tmp_str)] = self.init_grouped_data_dict()
-                grouped_data[(item.city, self.no_conditions_str)] = self.init_grouped_data_dict()
+            if (item.city, AVG_TMP_STR) not in grouped_data:
+                grouped_data[(item.city, AVG_TMP_STR)] = self.init_grouped_data_dict()
+                grouped_data[(item.city, NO_CONDITIONS_STR)] = self.init_grouped_data_dict()
 
             date = item.date
-            grouped_data[(item.city, self.avg_tmp_str)][date] = int(item.average_temperature)
-            grouped_data[(item.city, self.avg_tmp_str)]["sum"] += item.average_temperature
-            grouped_data[(item.city, self.avg_tmp_str)]["count"] += 1
+            grouped_data[(item.city, AVG_TMP_STR)][date] = int(item.average_temperature)
+            grouped_data[(item.city, AVG_TMP_STR)]["sum"] += item.average_temperature
+            grouped_data[(item.city, AVG_TMP_STR)]["count"] += 1
 
-            grouped_data[(item.city, self.no_conditions_str)][date] = int(item.without_conditions_hours)
-            grouped_data[(item.city, self.no_conditions_str)]["sum"] += item.without_conditions_hours
-            grouped_data[(item.city, self.no_conditions_str)]["count"] += 1
+            grouped_data[(item.city, NO_CONDITIONS_STR)][date] = int(item.without_conditions_hours)
+            grouped_data[(item.city, NO_CONDITIONS_STR)]["sum"] += item.without_conditions_hours
+            grouped_data[(item.city, NO_CONDITIONS_STR)]["count"] += 1
 
         return grouped_data
 
-    def group_for_output(self) -> Tuple[List[Dict], Tuple]:
+    def group_for_output(self) -> List[Dict]:
         data = self.group_by_city()
         output_data = list()
-        fieldnames = tuple()
         for item, value_dict in data.items():
             value_dict["Среднее"] = round(value_dict.pop("sum") / value_dict.pop("count"), 1)
-            fieldnames_tmp = ("Город / день", "", *value_dict.keys())
-            if len(fieldnames_tmp) > len(fieldnames):
-                fieldnames = fieldnames_tmp
+            fieldnames = ("Город / день", "", *value_dict.keys())
             output_data.append(
                 {
-                    "Город / день": item[0],
+                    "Город / день": item[0] if item[1] == AVG_TMP_STR else "",
                     "": item[1],
                     **value_dict
                 }
             )
-        return output_data, fieldnames
+        return output_data
 
     def run(self):
-        logging.info(f"{self.task_name} started. File format is {self.format}.")
-        if self.format == "csv":
-            with open("report.csv", "w") as f:
-                data, fields = self.group_for_output()
-                writer = csv.DictWriter(f, fields)
-                writer.writeheader()
-                writer.writerows(data)
-        logging.info(f"{self.task_name} finished.")
+        return self.group_for_output()
 
 
 class DataAnalyzingTask:
     """
-    Составляет рейтинг привлекательности городов
+    Составляет рейтинг привлекательности городов и создает файл
 
     - Наиболее благоприятным городом считать тот, в котором средняя температура за всё время была самой высокой,
     а количество времени без осадков — максимальным. Если таких городов более одного, то выводить все.
     """
 
-    def __init__(self):
+    def __init__(self, data: List[Dict], file_format: FileFormat):
+        self.task_name = "DataAnalyzingTask"
+        self.data = data
+        self.format = file_format
+
+    def get_scores(self):
+        pass
+        return self.data
+
+    def sort_by_scores(self):
         pass
 
     def run(self):
-        pass
+        logging.info(f"{self.task_name} started. File format is {self.format}.")
+        if self.format == "csv":
+            with open("report.csv", "w") as f:
+                data = self.get_scores()
+                fieldnames = data[0].keys()
+                writer = csv.DictWriter(f, fieldnames)
+                writer.writeheader()
+                writer.writerows(data)
+        logging.info(f"{self.task_name} finished.")

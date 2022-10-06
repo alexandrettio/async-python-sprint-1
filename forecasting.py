@@ -7,7 +7,7 @@ from api_client import YandexWeatherAPI
 from tasks import (
     DataFetchingTask,
     DataCalculationTask,
-    DataAggregationTask,
+    DataAggregationTask, DataAnalyzingTask,
 )
 from utils import CITIES
 
@@ -22,7 +22,8 @@ def forecast_weather():
         calculator = DataCalculationTask(fetcher.run())
         yw_data.extend(calculator.run())
     aggregator = DataAggregationTask(yw_data, "csv")
-    aggregator.run()
+    analyzer = DataAnalyzingTask(aggregator.run(), "csv")
+    analyzer.run()
 
 
 if __name__ == "__main__":

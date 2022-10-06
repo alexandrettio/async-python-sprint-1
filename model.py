@@ -23,25 +23,8 @@ class GeoObject(BaseModel):
 
 class Hour(BaseModel):
     hour: int
-    hour_ts: int
     temp: int
-    feels_like: int
-    icon: str
     condition: str
-    cloudness: float
-    prec_type: int
-    prec_strength: float
-    is_thunder: bool
-    wind_dir: str
-    wind_speed: float
-    wind_gust: float
-    pressure_mm: int
-    pressure_pa: int
-    humidity: int
-    uv_index: int
-    prec_mm: float
-    prec_period: int
-    prec_prob: int
 
 
 class Forecast(BaseModel):
@@ -57,7 +40,7 @@ class YWResponse(BaseModel):
 
 
 class CityWeatherData(BaseModel):
-    city: str  # TODO Enum
+    city: str
     date: str
     average_temperature: float
     without_conditions_hours: int
