@@ -1,5 +1,5 @@
 import logging
-import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 
 from tasks import (
     DataAggregationTask,
@@ -20,9 +20,8 @@ def forecast_weather():
     """
     Analyze weather by cities.
     """
-    cores_count = multiprocessing.cpu_count()
-    fetching_pool = multiprocessing.Pool(cores_count - 1)
-    fetching_pool_outputs = fetching_pool.imap_unordered(DataFetchingTask, CITIES)
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        fetching_pool_outputs = pool.map(DataFetchingTask, CITIES)
 
     yw_data = list()
     for i in fetching_pool_outputs:

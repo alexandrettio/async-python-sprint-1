@@ -35,11 +35,10 @@ class PickleHackStub:
         self.__dict__.update(state)
 
 
-class DataFetchingTask(Process, PickleHackStub):
+class DataFetchingTask:
     """Requests data from Yandex Weather by city and represents as YWResponse object."""
 
     def __init__(self, city_name: str):
-        super().__init__()
         self.task_name = "DataFetchingTask"
         self.city_name = city_name
         self.yw_api = YandexWeatherAPI()
