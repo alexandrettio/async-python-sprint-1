@@ -18,3 +18,15 @@ def test_data_fetching_task_unknown_city():
         task.run()
     except Exception as e:
         assert str(e) == "Please check that city {} exists".format(city_name)
+
+
+def test_data_calculation_task_success():
+    pass
+
+
+def test_data_aggregation_task_success():
+    pass
+
+
+def test_data_analyzing_task_success():
+    pass

@@ -9,13 +9,13 @@ from xlsxwriter import Workbook
 
 from api_client import YandexWeatherAPI
 from model import YWResponse, CityWeatherData
-from utils import BASE_CONDITIONS, AVG_TMP_STR, NO_CONDITIONS_STR, AVG_STR, HOURS_COUNT
+from utils import BASE_CONDITIONS, AVG_TMP_STR, NO_CONDITIONS_STR, AVG_STR, HOURS_COUNT, HOURS_START, HOURS_END
 
 FileFormat = Literal["json", "csv", "xls"]
 
 
 class DataFetchingTask:
-    """Выкачивание данных от Яндекс.Погоды по названию города и преобразует в объект YWResponse."""
+    """Requests data from Yandex Weather by city and represents as YWResponse object."""
 
     def __init__(self, city_name: str, yw_api: YandexWeatherAPI):
         self.task_name = "DataFetchingTask"
@@ -39,12 +39,10 @@ class DataFetchingTask:
 
 
 class DataCalculationTask:
-    """Выдает сренюю температуру и количество часов без осадков в городе за определенные даты.
+    """Calculates average temperature and count of hours without conditions in the city for dates.
+    If calculation period is not completed, data will be passed and not take part in statistics.
 
-    - период вычислений в течение дня — с 9 до 19 часов;
-    - средняя температура рассчитывается за указанный промежуток времени;
-    - сумма времени (часов), когда погода без осадков (без дождя, снега, града или грозы),
-    рассчитывается за указанный промежуток времени;
+    - day calculation period — from 9am to 7pm;
     """
 
     def __init__(self, response: YWResponse):
@@ -55,9 +53,10 @@ class DataCalculationTask:
         logging.info(f"{self.task_name} started for city {self.response.geo_object.province.name}.")
         result = []
         for date_info in self.response.forecasts:
-            temps = [h.temp for h in date_info.hours if 9 <= h.hour <= 19]
+            temps = [h.temp for h in date_info.hours if HOURS_START <= h.hour <= HOURS_END]
             without_conditions = [h.condition for h in date_info.hours
-                                  if 9 <= h.hour <= 19 and h.condition not in BASE_CONDITIONS]
+                                  if HOURS_START <= h.hour <= HOURS_END and
+                                  h.condition not in BASE_CONDITIONS]
             if len(temps) == HOURS_COUNT:  # if API returns not full day, period average stats will be ruined
                 data = CityWeatherData(
                     city=self.response.geo_object.province.name,
@@ -72,7 +71,7 @@ class DataCalculationTask:
 
 
 class DataAggregationTask:
-    """Группирует данные и создает таблицу с агрегированными данными."""
+    """Aggregates data for different days, scores absolute city attraction."""
 
     def __init__(self, data: List[CityWeatherData]):
         self.task_name = "DataAggregationTask"
@@ -96,14 +95,18 @@ class DataAggregationTask:
         return grouped_data
 
     @staticmethod
-    def count_average_and_rating(data: Dict[str, Dict[str, Dict]]) -> Tuple[Dict[str, Dict], Dict[int, List[str]]]:
+    def count_points(info: Dict[str, float]) -> int:
+        return int(info[AVG_TMP_STR] * 100 + info[NO_CONDITIONS_STR])
+
+    def count_average_and_rating(self, data: Dict[str, Dict[str, Dict]]) -> Tuple[
+        Dict[str, Dict], Dict[int, List[str]]]:
         rating = defaultdict(list)
         for city, info in data.items():
             data[city][AVG_STR][AVG_TMP_STR] = data[city]["sum"][AVG_TMP_STR] / HOURS_COUNT
             data[city][AVG_STR][NO_CONDITIONS_STR] = data[city]["sum"][NO_CONDITIONS_STR] / HOURS_COUNT
-            average_info = data[city][AVG_STR]
             data[city].pop("sum")
-            points = int(average_info[AVG_TMP_STR] * 100 + average_info[NO_CONDITIONS_STR])
+
+            points = self.count_points(data[city][AVG_STR])
             rating[points].append(city)
         return data, rating
 
@@ -112,12 +115,7 @@ class DataAggregationTask:
 
 
 class DataAnalyzingTask:
-    """
-    Составляет рейтинг привлекательности городов и создает файл
-
-    - Наиболее благоприятным городом считать тот, в котором средняя температура за всё время была самой высокой,
-    а количество времени без осадков — максимальным. Если таких городов более одного, то выводить все.
-    """
+    """Aggregates city attraction rating and write it down in the file with selected format."""
 
     def __init__(self, data: Dict[str, Dict], rating: Dict[int, List[str]], file_format: FileFormat):
         self.task_name = "DataAnalyzingTask"
