@@ -1,7 +1,4 @@
-# import logging
-# import threading
-# import subprocess
-# import multiprocessing
+import logging
 
 from api_client import YandexWeatherAPI
 from tasks import (
@@ -10,6 +7,16 @@ from tasks import (
     DataAggregationTask, DataAnalyzingTask,
 )
 from utils import CITIES
+
+# import threading
+# import subprocess
+# import multiprocessing
+
+logging.basicConfig(
+    filename="sprint1.log",
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s",
+    level="INFO"
+)
 
 
 def forecast_weather():
