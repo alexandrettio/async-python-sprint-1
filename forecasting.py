@@ -1,5 +1,4 @@
 import logging
-# import subprocess
 import multiprocessing
 
 from tasks import (
@@ -9,8 +8,6 @@ from tasks import (
     DataFetchingTask,
 )
 from utils import CITIES
-
-# import threading
 
 logging.basicConfig(
     filename="sprint1.log",
@@ -25,10 +22,10 @@ def forecast_weather():
     """
     cores_count = multiprocessing.cpu_count()
     fetching_pool = multiprocessing.Pool(cores_count - 1)
-    pool_outputs = fetching_pool.imap_unordered(DataFetchingTask, CITIES)
+    fetching_pool_outputs = fetching_pool.imap_unordered(DataFetchingTask, CITIES)
 
     yw_data = list()
-    for i in pool_outputs:
+    for i in fetching_pool_outputs:
         calculator = DataCalculationTask(i.run())
         yw_data.extend(calculator.run())
     data, rating = DataAggregationTask(yw_data).run()

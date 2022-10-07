@@ -1,6 +1,7 @@
 import csv
 import json
 import logging
+import threading
 from collections import defaultdict
 from multiprocessing import Process
 from multiprocessing.process import AuthenticationString
@@ -65,7 +66,7 @@ class DataFetchingTask(Process, PickleHackStub):
             raise e
 
 
-class DataCalculationTask:
+class DataCalculationTask(Process, PickleHackStub):
     """Calculates average temperature and count of hours without conditions in the city for dates.
     If calculation period is not completed, data will be passed and not take part in statistics.
 
@@ -73,6 +74,7 @@ class DataCalculationTask:
     """
 
     def __init__(self, response: YWResponse):
+        super().__init__()
         self.task_name = "DataCalculationTask"
         self.response = response
 
@@ -112,6 +114,7 @@ class DataAggregationTask:
     """Aggregates data for different days, scores absolute city attraction."""
 
     def __init__(self, data: List[CityWeatherData]):
+        super().__init__()
         self.task_name = "DataAggregationTask"
         self.data = data
 
@@ -161,7 +164,7 @@ class DataAggregationTask:
         return self.count_average_and_rating(self.group_by_city())
 
 
-class DataAnalyzingTask:
+class DataAnalyzingTask(threading.Thread):
     """Aggregates city attraction rating and write it down in the file with selected format."""
 
     def __init__(
@@ -170,6 +173,7 @@ class DataAnalyzingTask:
             rating: Dict[int, List[str]],
             file_format: FileFormat,
     ):
+        super().__init__()
         self.task_name = "DataAnalyzingTask"
         self.data = data
         self.rating = rating
