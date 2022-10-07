@@ -23,9 +23,11 @@ def forecast_weather():
     """
     Analyze weather by cities.
     """
-    yw_data = list()
-    fetching_pool = multiprocessing.Pool(processes=3)
+    cores_count = multiprocessing.cpu_count()
+    fetching_pool = multiprocessing.Pool(cores_count - 1)
     pool_outputs = fetching_pool.imap_unordered(DataFetchingTask, CITIES)
+
+    yw_data = list()
     for i in pool_outputs:
         calculator = DataCalculationTask(i.run())
         yw_data.extend(calculator.run())
