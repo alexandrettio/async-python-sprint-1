@@ -2,39 +2,66 @@ import csv
 import json
 import logging
 from collections import defaultdict
-from typing import List, Literal, Dict, Tuple
+from multiprocessing import Process
+from multiprocessing.process import AuthenticationString
+from typing import Dict, List, Literal, Tuple
 
 from pydantic import ValidationError
 from xlsxwriter import Workbook
 
 from api_client import YandexWeatherAPI
-from model import YWResponse, CityWeatherData
-from utils import BASE_CONDITIONS, AVG_TMP_STR, NO_CONDITIONS_STR, AVG_STR, HOURS_COUNT, HOURS_START, HOURS_END
+from model import CityWeatherData, YWResponse
+from utils import (AVG_STR, AVG_TMP_STR, BASE_CONDITIONS, HOURS_COUNT,
+                   HOURS_END, HOURS_START, NO_CONDITIONS_STR)
 
 FileFormat = Literal["json", "csv", "xls"]
 
 
-class DataFetchingTask:
+class PickleHackStub:
+    def __getstate__(self):
+        """called when pickling - this hack allows subprocesses to
+        be spawned without the AuthenticationString raising an error"""
+        state = self.__dict__.copy()
+        conf = state["_config"]
+        if "authkey" in conf:
+            # del conf['authkey']
+            conf["authkey"] = bytes(conf["authkey"])
+        return state
+
+    def __setstate__(self, state):
+        """for unpickling"""
+        state["_config"]["authkey"] = AuthenticationString(state["_config"]["authkey"])
+        self.__dict__.update(state)
+
+
+class DataFetchingTask(Process, PickleHackStub):
     """Requests data from Yandex Weather by city and represents as YWResponse object."""
 
-    def __init__(self, city_name: str, yw_api: YandexWeatherAPI):
+    def __init__(self, city_name: str):
+        super().__init__()
         self.task_name = "DataFetchingTask"
         self.city_name = city_name
-        self.yw_api = yw_api
+        self.yw_api = YandexWeatherAPI()
 
     def run(self) -> YWResponse:
         logging.info(f"{self.task_name} started for city {self.city_name}.")
         try:
             raw_response = self.yw_api.get_forecasting(self.city_name)
             parsed = YWResponse.parse_obj(raw_response)
-            logging.info(f"{self.task_name} finished without errors for city {self.city_name}.")
+            logging.info(
+                f"{self.task_name} finished without errors for city {self.city_name}."
+            )
             return parsed
         except ValidationError as e:
-            logging.exception(f"{self.task_name} finished with error for city "
-                              f"{self.city_name} during parsing response: {e}")
+            logging.exception(
+                f"{self.task_name} finished with error for city "
+                f"{self.city_name} during parsing response: {e}"
+            )
             raise e
         except Exception as e:  # Bad API: why raises common exception not customized?
-            logging.exception(f"{self.task_name} finished with error for city: {self.city_name}. Got: {e}")
+            logging.exception(
+                f"{self.task_name} finished with error for city: {self.city_name}. Got: {e}"
+            )
             raise e
 
 
@@ -50,23 +77,34 @@ class DataCalculationTask:
         self.response = response
 
     def run(self) -> List[CityWeatherData]:
-        logging.info(f"{self.task_name} started for city {self.response.geo_object.province.name}.")
+        logging.info(
+            f"{self.task_name} started for city {self.response.geo_object.province.name}."
+        )
         result = []
         for date_info in self.response.forecasts:
-            temps = [h.temp for h in date_info.hours if HOURS_START <= h.hour <= HOURS_END]
-            without_conditions = [h.condition for h in date_info.hours
-                                  if HOURS_START <= h.hour <= HOURS_END and
-                                  h.condition not in BASE_CONDITIONS]
-            if len(temps) == HOURS_COUNT:  # if API returns not full day, period average stats will be ruined
+            temps = [
+                h.temp for h in date_info.hours if HOURS_START <= h.hour <= HOURS_END
+            ]
+            without_conditions = [
+                h.condition
+                for h in date_info.hours
+                if HOURS_START <= h.hour <= HOURS_END
+                   and h.condition not in BASE_CONDITIONS
+            ]
+            if (
+                    len(temps) == HOURS_COUNT
+            ):  # if API returns not full day, period average stats will be ruined
                 data = CityWeatherData(
                     city=self.response.geo_object.province.name,
                     date=date_info.date,
                     average_temperature=sum(temps) / len(temps),
-                    without_conditions_hours=len(without_conditions)
+                    without_conditions_hours=len(without_conditions),
                 )
                 result.append(data)
-        logging.info(f"{self.task_name} finished for city {self.response.geo_object.province.name}. "
-                     f"Got {len(result)} date weather records.")
+        logging.info(
+            f"{self.task_name} finished for city {self.response.geo_object.province.name}. "
+            f"Got {len(result)} date weather records."
+        )
         return result
 
 
@@ -88,22 +126,31 @@ class DataAggregationTask:
 
             date = item.date
             grouped_data[item.city][date][AVG_TMP_STR] = int(item.average_temperature)
-            grouped_data[item.city][date][NO_CONDITIONS_STR] = int(item.without_conditions_hours)
+            grouped_data[item.city][date][NO_CONDITIONS_STR] = int(
+                item.without_conditions_hours
+            )
 
             grouped_data[item.city]["sum"][AVG_TMP_STR] += item.average_temperature
-            grouped_data[item.city]["sum"][NO_CONDITIONS_STR] += item.without_conditions_hours
+            grouped_data[item.city]["sum"][
+                NO_CONDITIONS_STR
+            ] += item.without_conditions_hours
         return grouped_data
 
     @staticmethod
     def count_points(info: Dict[str, float]) -> int:
         return int(info[AVG_TMP_STR] * 100 + info[NO_CONDITIONS_STR])
 
-    def count_average_and_rating(self, data: Dict[str, Dict[str, Dict]]) -> Tuple[
-        Dict[str, Dict], Dict[int, List[str]]]:
+    def count_average_and_rating(
+            self, data: Dict[str, Dict[str, Dict]]
+    ) -> Tuple[Dict[str, Dict], Dict[int, List[str]]]:
         rating = defaultdict(list)
         for city, info in data.items():
-            data[city][AVG_STR][AVG_TMP_STR] = data[city]["sum"][AVG_TMP_STR] / HOURS_COUNT
-            data[city][AVG_STR][NO_CONDITIONS_STR] = data[city]["sum"][NO_CONDITIONS_STR] / HOURS_COUNT
+            data[city][AVG_STR][AVG_TMP_STR] = (
+                    data[city]["sum"][AVG_TMP_STR] / HOURS_COUNT
+            )
+            data[city][AVG_STR][NO_CONDITIONS_STR] = (
+                    data[city]["sum"][NO_CONDITIONS_STR] / HOURS_COUNT
+            )
             data[city].pop("sum")
 
             points = self.count_points(data[city][AVG_STR])
@@ -117,7 +164,12 @@ class DataAggregationTask:
 class DataAnalyzingTask:
     """Aggregates city attraction rating and write it down in the file with selected format."""
 
-    def __init__(self, data: Dict[str, Dict], rating: Dict[int, List[str]], file_format: FileFormat):
+    def __init__(
+            self,
+            data: Dict[str, Dict],
+            rating: Dict[int, List[str]],
+            file_format: FileFormat,
+    ):
         self.task_name = "DataAnalyzingTask"
         self.data = data
         self.rating = rating
@@ -135,18 +187,22 @@ class DataAnalyzingTask:
                     conditions[k] = round(v[NO_CONDITIONS_STR], 1)
 
                 # 2 lines for one city as in example.
-                result.append({
-                    "Город/день": city_name,
-                    "": AVG_TMP_STR,
-                    **avgs,
-                    "Рейтинг": index,
-                })
-                result.append({
-                    "Город/день": None,
-                    "": NO_CONDITIONS_STR,
-                    **conditions,
-                    "Рейтинг": None,
-                })
+                result.append(
+                    {
+                        "Город/день": city_name,
+                        "": AVG_TMP_STR,
+                        **avgs,
+                        "Рейтинг": index,
+                    }
+                )
+                result.append(
+                    {
+                        "Город/день": None,
+                        "": NO_CONDITIONS_STR,
+                        **conditions,
+                        "Рейтинг": None,
+                    }
+                )
             index += 1
         return result
 
@@ -173,7 +229,7 @@ class DataAnalyzingTask:
             worksheet = workbook.add_worksheet()
             worksheet.write_row(row=0, col=0, data=fieldnames)
             for index, item in enumerate(data):
-                row = map(lambda field_id: item.get(field_id, ''), fieldnames)
+                row = map(lambda field_id: item.get(field_id, ""), fieldnames)
                 worksheet.write_row(row=index + 1, col=0, data=row)
         logging.info(f"write_xls finished.")
 
