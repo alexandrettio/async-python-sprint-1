@@ -1,4 +1,3 @@
-import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from tasks import (
@@ -9,18 +8,12 @@ from tasks import (
 )
 from utils import CITIES
 
-logging.basicConfig(
-    filename="sprint1.log",
-    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s",
-    level="INFO",
-)
-
 
 def forecast_weather():
     """
     Analyze weather by cities.
     """
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor() as pool:
         fetching_pool_outputs = pool.map(DataFetchingTask, CITIES)
 
     yw_data = list()

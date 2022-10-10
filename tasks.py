@@ -1,11 +1,10 @@
 import csv
 import json
-import logging
 import threading
 from collections import defaultdict
 from multiprocessing import Process
 from multiprocessing.process import AuthenticationString
-from typing import Dict, List, Literal, Tuple
+from typing import Literal
 
 from pydantic import ValidationError
 from xlsxwriter import Workbook
@@ -13,7 +12,7 @@ from xlsxwriter import Workbook
 from api_client import YandexWeatherAPI
 from model import CityWeatherData, YWResponse
 from utils import (AVG_STR, AVG_TMP_STR, BASE_CONDITIONS, HOURS_COUNT,
-                   HOURS_END, HOURS_START, NO_CONDITIONS_STR)
+                   HOURS_END, HOURS_START, NO_CONDITIONS_STR, logger)
 
 FileFormat = Literal["json", "csv", "xls"]
 
@@ -44,22 +43,22 @@ class DataFetchingTask:
         self.yw_api = YandexWeatherAPI()
 
     def run(self) -> YWResponse:
-        logging.info(f"{self.task_name} started for city {self.city_name}.")
+        logger.info(f"{self.task_name} started for city {self.city_name}.")
         try:
             raw_response = self.yw_api.get_forecasting(self.city_name)
             parsed = YWResponse.parse_obj(raw_response)
-            logging.info(
+            logger.info(
                 f"{self.task_name} finished without errors for city {self.city_name}."
             )
             return parsed
         except ValidationError as e:
-            logging.exception(
+            logger.exception(
                 f"{self.task_name} finished with error for city "
                 f"{self.city_name} during parsing response: {e}"
             )
             raise e
         except Exception as e:  # Bad API: why raises common exception not customized?
-            logging.exception(
+            logger.exception(
                 f"{self.task_name} finished with error for city: {self.city_name}. Got: {e}"
             )
             raise e
@@ -77,8 +76,8 @@ class DataCalculationTask(Process, PickleHackStub):
         self.task_name = "DataCalculationTask"
         self.response = response
 
-    def run(self) -> List[CityWeatherData]:
-        logging.info(
+    def run(self) -> list[CityWeatherData]:
+        logger.info(
             f"{self.task_name} started for city {self.response.geo_object.province.name}."
         )
         result = []
@@ -87,10 +86,8 @@ class DataCalculationTask(Process, PickleHackStub):
                 h.temp for h in date_info.hours if HOURS_START <= h.hour <= HOURS_END
             ]
             without_conditions = [
-                h.condition
-                for h in date_info.hours
-                if HOURS_START <= h.hour <= HOURS_END
-                   and h.condition not in BASE_CONDITIONS
+                h.condition for h in date_info.hours
+                if HOURS_START <= h.hour <= HOURS_END and h.condition not in BASE_CONDITIONS
             ]
             if (
                     len(temps) == HOURS_COUNT
@@ -102,7 +99,7 @@ class DataCalculationTask(Process, PickleHackStub):
                     without_conditions_hours=len(without_conditions),
                 )
                 result.append(data)
-        logging.info(
+        logger.info(
             f"{self.task_name} finished for city {self.response.geo_object.province.name}. "
             f"Got {len(result)} date weather records."
         )
@@ -112,12 +109,12 @@ class DataCalculationTask(Process, PickleHackStub):
 class DataAggregationTask:
     """Aggregates data for different days, scores absolute city attraction."""
 
-    def __init__(self, data: List[CityWeatherData]):
+    def __init__(self, data: list[CityWeatherData]):
         super().__init__()
         self.task_name = "DataAggregationTask"
         self.data = data
 
-    def group_by_city(self) -> Dict[str, Dict[str, Dict[str, float]]]:
+    def group_by_city(self) -> dict[str, dict[str, dict[str, float]]]:
         grouped_data = dict()
 
         for item in self.data:
@@ -139,12 +136,12 @@ class DataAggregationTask:
         return grouped_data
 
     @staticmethod
-    def count_points(info: Dict[str, float]) -> int:
+    def count_points(info: dict[str, float]) -> int:
         return int(info[AVG_TMP_STR] * 100 + info[NO_CONDITIONS_STR])
 
     def count_average_and_rating(
-            self, data: Dict[str, Dict[str, Dict]]
-    ) -> Tuple[Dict[str, Dict], Dict[int, List[str]]]:
+            self, data: dict[str, dict[str, dict]]
+    ) -> tuple[dict[str, dict], dict[int, list[str]]]:
         rating = defaultdict(list)
         for city, info in data.items():
             data[city][AVG_STR][AVG_TMP_STR] = (
@@ -168,8 +165,8 @@ class DataAnalyzingTask(threading.Thread):
 
     def __init__(
             self,
-            data: Dict[str, Dict],
-            rating: Dict[int, List[str]],
+            data: dict[str, dict],
+            rating: dict[int, list[str]],
             file_format: FileFormat,
     ):
         super().__init__()
@@ -178,7 +175,7 @@ class DataAnalyzingTask(threading.Thread):
         self.rating = rating
         self.format = file_format
 
-    def group_table_ordered_by_points(self) -> List[Dict]:
+    def group_table_ordered_by_points(self) -> list[dict]:
         result = list()
         index = 1
         for points in sorted(self.rating, reverse=True):
@@ -206,38 +203,44 @@ class DataAnalyzingTask(threading.Thread):
                         "Рейтинг": None,
                     }
                 )
+
+            if index == 1:
+                if len(self.rating[points]) == 1:
+                    logger.info(f"Best city for vacation is {self.rating[points][0]}!")
+                else:
+                    logger.info(f"Best cities for vacation are {', '.join(self.rating[points])}")
             index += 1
         return result
 
     @staticmethod
-    def write_csv(data: List[Dict], fieldnames: List[str]):
-        logging.info(f"write_csv started.")
+    def write_csv(data: list[dict], fieldnames: list[str]):
+        logger.info(f"write_csv started.")
         with open("report.csv", "w") as f:
             writer = csv.DictWriter(f, fieldnames)
             writer.writeheader()
             writer.writerows(data)
-        logging.info(f"write_csv finished.")
+        logger.info(f"write_csv finished.")
 
     @staticmethod
-    def write_json(data: List[Dict]):
-        logging.info(f"write_json started.")
+    def write_json(data: list[dict]):
+        logger.info(f"write_json started.")
         with open("report.json", "w") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-        logging.info(f"write_json finished.")
+        logger.info(f"write_json finished.")
 
     @staticmethod
-    def write_xls(data: List[Dict], fieldnames: List[str]):
-        logging.info(f"write_xls started.")
+    def write_xls(data: list[dict], fieldnames: list[str]):
+        logger.info(f"write_xls started.")
         with Workbook("report.xlsx") as workbook:
             worksheet = workbook.add_worksheet()
             worksheet.write_row(row=0, col=0, data=fieldnames)
             for index, item in enumerate(data):
                 row = map(lambda field_id: item.get(field_id, ""), fieldnames)
                 worksheet.write_row(row=index + 1, col=0, data=row)
-        logging.info(f"write_xls finished.")
+        logger.info(f"write_xls finished.")
 
     def run(self):
-        logging.info(f"{self.task_name} started. File format is {self.format}.")
+        logger.info(f"{self.task_name} started. File format is {self.format}.")
         data = self.group_table_ordered_by_points()
         fieldnames = list(data[0].keys())
         if self.format == "csv":
@@ -246,4 +249,4 @@ class DataAnalyzingTask(threading.Thread):
             self.write_json(data)
         elif self.format == "xls":
             self.write_xls(data, fieldnames)
-        logging.info(f"{self.task_name} finished.")
+        logger.info(f"{self.task_name} finished.")

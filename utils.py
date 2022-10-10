@@ -1,3 +1,5 @@
+import logging
+
 CITIES = {
     "MOSCOW": "https://code.s3.yandex.net/async-module/moscow-response.json",
     "PARIS": "https://code.s3.yandex.net/async-module/paris-response.json",
@@ -28,6 +30,13 @@ AVG_STR = "Среднее"
 HOURS_START = 9
 HOURS_END = 19
 HOURS_COUNT = HOURS_END - HOURS_START + 1
+
+logging.basicConfig(
+    filename="sprint1.log",
+    format="%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s",
+    level="INFO",
+)
+logger = logging.getLogger()
 
 
 def check_python_version():

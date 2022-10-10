@@ -1,9 +1,8 @@
-from api_client import YandexWeatherAPI
 from tasks import DataFetchingTask
 
 
 def test_data_fetching_task_success():
-    task = DataFetchingTask(city_name="MOSCOW", yw_api=YandexWeatherAPI())
+    task = DataFetchingTask(city_name="MOSCOW")
     response = task.run()
     assert response.geo_object.province.name == "Moscow"
     assert len(response.forecasts) == 5
@@ -13,7 +12,7 @@ def test_data_fetching_task_success():
 
 def test_data_fetching_task_unknown_city():
     city_name = "Not MOSCOW"
-    task = DataFetchingTask(city_name="Not MOSCOW", yw_api=YandexWeatherAPI())
+    task = DataFetchingTask(city_name="Not MOSCOW")
     try:
         task.run()
     except Exception as e:
