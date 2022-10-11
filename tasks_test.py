@@ -1,4 +1,6 @@
-from tasks import DataFetchingTask
+from multiprocessing import Queue
+
+from tasks import DataFetchingTask, DataCalculationTask
 
 
 def test_data_fetching_task_success():
@@ -20,12 +22,13 @@ def test_data_fetching_task_unknown_city():
 
 
 def test_data_calculation_task_success():
-    pass
-
-
-def test_data_aggregation_task_success():
-    pass
-
-
-def test_data_analyzing_task_success():
-    pass
+    fetch_response = DataFetchingTask(city_name="MOSCOW").run()
+    queue = Queue()
+    task = DataCalculationTask(fetch_response, queue)
+    task.run()
+    assert not queue.empty()
+    item = queue.get()
+    assert item.city == "Moscow"
+    assert item.date == "2022-05-26"
+    assert round(item.average_temperature, 1) == 17.7
+    assert item.without_conditions_hours == 11

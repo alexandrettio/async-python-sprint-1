@@ -2,8 +2,7 @@ import csv
 import json
 import threading
 from collections import defaultdict
-from multiprocessing import Process
-from multiprocessing.process import AuthenticationString
+from multiprocessing import Process, Queue
 from typing import Literal
 
 from pydantic import ValidationError
@@ -24,13 +23,12 @@ class PickleHackStub:
         state = self.__dict__.copy()
         conf = state["_config"]
         if "authkey" in conf:
-            # del conf['authkey']
             conf["authkey"] = bytes(conf["authkey"])
         return state
 
     def __setstate__(self, state):
         """for unpickling"""
-        state["_config"]["authkey"] = AuthenticationString(state["_config"]["authkey"])
+        state["_config"]["authkey"] = None
         self.__dict__.update(state)
 
 
@@ -71,12 +69,13 @@ class DataCalculationTask(Process, PickleHackStub):
     - day calculation period — from 9am to 7pm;
     """
 
-    def __init__(self, response: YWResponse):
+    def __init__(self, response: YWResponse, queue: Queue):
         super().__init__()
         self.task_name = "DataCalculationTask"
         self.response = response
+        self.queue = queue
 
-    def run(self) -> list[CityWeatherData]:
+    def run(self) -> None:
         logger.info(
             f"{self.task_name} started for city {self.response.geo_object.province.name}."
         )
@@ -98,26 +97,27 @@ class DataCalculationTask(Process, PickleHackStub):
                     average_temperature=sum(temps) / len(temps),
                     without_conditions_hours=len(without_conditions),
                 )
-                result.append(data)
+                self.queue.put(data)
         logger.info(
             f"{self.task_name} finished for city {self.response.geo_object.province.name}. "
             f"Got {len(result)} date weather records."
         )
-        return result
 
 
-class DataAggregationTask:
+class DataAggregationTask(Process, PickleHackStub):
     """Aggregates data for different days, scores absolute city attraction."""
 
-    def __init__(self, data: list[CityWeatherData]):
+    def __init__(self, queue: Queue):
         super().__init__()
         self.task_name = "DataAggregationTask"
-        self.data = data
+        self.queue = queue
 
     def group_by_city(self) -> dict[str, dict[str, dict[str, float]]]:
         grouped_data = dict()
 
-        for item in self.data:
+        while not self.queue.empty():
+            item = self.queue.get()
+
             if item.city not in grouped_data:
                 grouped_data[item.city] = defaultdict(dict)
                 grouped_data[item.city]["sum"][AVG_TMP_STR] = 0
@@ -156,7 +156,7 @@ class DataAggregationTask:
             rating[points].append(city)
         return data, rating
 
-    def run(self):
+    def run(self) -> tuple[dict[str, dict], dict[int, list[str]]]:
         return self.count_average_and_rating(self.group_by_city())
 
 

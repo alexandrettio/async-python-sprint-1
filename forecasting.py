@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Queue
 
 from tasks import (
     DataAggregationTask,
@@ -13,14 +14,13 @@ def forecast_weather():
     """
     Analyze weather by cities.
     """
+    queue = Queue()
     with ThreadPoolExecutor() as pool:
         fetching_pool_outputs = pool.map(DataFetchingTask, CITIES)
 
-    yw_data = list()
     for i in fetching_pool_outputs:
-        calculator = DataCalculationTask(i.run())
-        yw_data.extend(calculator.run())
-    data, rating = DataAggregationTask(yw_data).run()
+        DataCalculationTask(i.run(), queue).run()
+    data, rating = DataAggregationTask(queue).run()
     analyzer = DataAnalyzingTask(data, rating, "csv")
     analyzer.run()
 
